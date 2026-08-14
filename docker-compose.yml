@@ -1,0 +1,64 @@
+# Levanta el sistema completo desde un clon limpio: `docker compose up --build`.
+# Nada hace falta instalar en el host (ni Python, ni deps, ni Postgres).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-notifications}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-notifications}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - notifnet
+
+  # Servicio de un solo uso: corre las migraciones y termina. La app solo
+  # arranca cuando este servicio finalizó con éxito, así ninguna request llega
+  # antes de que el esquema esté listo (criterio 13), sin pasos manuales.
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notifications}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - notifnet
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notifications}
+      # Default de desarrollo para que un clon limpio levante sin fricción.
+      # LÍMITE CONOCIDO: en producción hay que pasar un JWT_SECRET propio.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').getcode()==200 else 1)\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - notifnet
+
+volumes:
+  pgdata:
+
+# Red propia y explícita para los tres servicios (criterio 13).
+networks:
+  notifnet:
+    driver: bridge

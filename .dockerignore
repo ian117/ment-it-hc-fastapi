@@ -1,0 +1,23 @@
+# Entornos y artefactos locales: nunca deben entrar al contexto de build.
+.venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Control de versiones y metadatos.
+.git
+.gitignore
+
+# Secretos y config local.
+.env
+.claude/
+
+# Tests y docs de proceso: no van a la imagen de la app.
+tests/
+PROGRESS.md
+
+# Docker y CI (no se necesitan dentro del contexto).
+Dockerfile
+.dockerignore
+docker-compose.yml

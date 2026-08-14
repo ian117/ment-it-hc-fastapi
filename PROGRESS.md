@@ -8,7 +8,7 @@ pendiente, no como hecho.
 
 - [x] **Hito A — scaffolding + modelos + migraciones + auth** (commit `815bdeb`)
 - [x] **Hito B — canales + despachador + notifications CRUD** (commit `1c75318`)
-- [ ] **Hito C — Docker + e2e + README + checklist final** (pendiente)
+- [x] **Hito C — Docker + e2e + README + checklist final**
 
 ## Criterios de aceptación (los 11 del brief)
 
@@ -24,7 +24,7 @@ pendiente, no como hecho.
 | 8 | Reset con email inexistente → misma respuesta | ✅ | mismo status/body que uno existente |
 | 9 | Ninguna respuesta trae el hash | ✅ | se serializa contra `UserOut`, nunca el ORM |
 | 10 | Migraciones reversibles, sin tipos huérfanos | ✅ | downgrade→base deja base limpia; re-upgrade reconstruye |
-| 11 | `docker compose` desde clon limpio levanta todo | ⏳ | Hito C |
+| 11 | `docker compose` desde clon limpio levanta todo | ✅ | `docker compose up --build`; los 10 criterios probados contra `:8000` |
 
 ## Requisitos de calidad (sección 5 del brief)
 
@@ -40,9 +40,9 @@ pendiente, no como hecho.
 - [x] 10. Listado paginado, orden determinístico, techo de página
 - [x] 11. Payload inválido para el canal se rechaza antes de escribir
 - [x] 12. Envío fallido: motivo persistido y logueado
-- [ ] 13. `docker compose` con healthchecks, red propia, migraciones antes del tráfico → **Hito C**
-- [ ] 14. Imagen sin fuente de más / sin dev deps / no root / sin secretos → **Hito C**
-- [x] 15. Tests unitarios sin DB (rápidos)  ·  [ ] e2e happy path contra DB real → **Hito C**
+- [x] 13. `docker compose` con healthchecks, red propia, migraciones antes del tráfico
+- [x] 14. Imagen sin fuente de más / sin dev deps / no root / sin secretos
+- [x] 15. Tests unitarios sin DB (rápidos) + e2e happy path contra DB real
 
 ## Decisiones de diseño (resumen; el detalle va al README en Hito C)
 
@@ -55,15 +55,26 @@ pendiente, no como hecho.
 - **El despachador dueña el orden invariante** (validar→persistir pending→entregar→registrar); los canales no tocan la DB → testeables sin base.
 - **SMS >160 y email inválido**: se rechazan con `400`, no se truncan/aceptan en silencio.
 
-## Estado operativo (dev)
+## Entregables (sección 8 del brief)
 
-- App dev: `uvicorn fastappi_notification.main:app` en `:8010` (docs en `/docs`).
-- DB dev: contenedor `fastapi-notif-dev-db` (postgres:16-alpine) en `:5434`.
-  Separado del contenedor del proyecto NestJS (`:5433`).
-- Tests: `uv run pytest` — 15 unitarios en verde.
+- [x] README con instalación/ejecución, variables de entorno, endpoints y
+      decisiones de diseño con sus límites conocidos.
+- [x] Checklist honesto (este archivo).
+- [x] Documentación de API navegable (`/docs`, `/redoc`).
+- [x] `Dockerfile` de la app y `docker-compose.yml` (db + migraciones + app).
+- [x] `.dockerignore`.
 
-## Cómo retomar
+## Estado operativo
 
-1. Leer este archivo y `git log` para ubicarse.
-2. Levantar DB dev y app (ver "Estado operativo").
-3. Continuar por el próximo hito sin marcar (arriba).
+- Producción-like: `docker compose up --build` → API en `:8000`.
+- Dev local: `uv run uvicorn fastappi_notification.main:app --port 8000`
+  contra un PostgreSQL (ej. `:5434`). Ver README, "Opción B".
+- Tests: `uv run pytest` — 16 en verde (15 unitarios + 1 e2e contra DB real;
+  el e2e hace skip si no hay Postgres).
+
+## Estado del proyecto
+
+Los tres hitos están completos y los 11 criterios de aceptación verificados en
+vivo contra la app dockerizada. Pendientes/mejoras futuras: ver los "límites
+conocidos" en el README (transacción sobre el envío → outbox, rate limit →
+Redis, envío real de emails).
