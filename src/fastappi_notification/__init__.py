@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from fastappi-notification!")
+"""Sistema de notificaciones multicanal (FastAPI + PostgreSQL)."""

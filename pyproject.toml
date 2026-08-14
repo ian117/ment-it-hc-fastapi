@@ -1,17 +1,28 @@
 [project]
 name = "fastappi-notification"
 version = "0.1.0"
-description = "Add your description here"
+description = "Sistema de notificaciones multicanal con FastAPI y PostgreSQL"
 readme = "README.md"
-authors = [
-    { name = "", email = "" }
-]
 requires-python = ">=3.10"
-dependencies = []
-
-[project.scripts]
-fastappi-notification = "fastappi_notification:main"
+dependencies = [
+    "alembic>=1.19.1",
+    "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.4",
+    "pwdlib[argon2]>=0.3.1",
+    "pydantic-settings>=2.15.0",
+    "pydantic[email]>=2.13.4",
+    "pyjwt>=2.13.0",
+    "slowapi>=0.1.10",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.52.3",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
