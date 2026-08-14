@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
-from .api.routers import auth
+from .api.routers import auth, notifications
 from .core.errors import register_exception_handlers
 from .core.limiter import limiter
 from .core.middleware import SecurityHeadersMiddleware
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     app.include_router(auth.router)
+    app.include_router(notifications.router)
 
     @app.get("/health", tags=["ops"])
     def health() -> dict:

@@ -18,16 +18,25 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..channels.base import ChannelValidationError
+
 logger = logging.getLogger("fastappi_notification")
 
 
 class AppError(Exception):
     """Error de negocio con código HTTP y forma controlada."""
 
-    def __init__(self, status_code: int, message: str, error_type: str = "error"):
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        error_type: str = "error",
+        details: list | None = None,
+    ):
         self.status_code = status_code
         self.message = message
         self.error_type = error_type
+        self.details = details
         super().__init__(message)
 
 
@@ -43,7 +52,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_app_error(request: Request, exc: AppError):
         return JSONResponse(
             status_code=exc.status_code,
-            content=_error_body(exc.error_type, exc.message),
+            content=_error_body(exc.error_type, exc.message, exc.details),
+        )
+
+    @app.exception_handler(ChannelValidationError)
+    async def _handle_channel_validation(request: Request, exc: ChannelValidationError):
+        # El payload no cumple lo que el canal exige. Se rechaza con 400 y —al
+        # ejecutarse antes de persistir— no deja nada escrito en la base
+        # (criterio de aceptación 2).
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=_error_body("channel_validation_error", exc.message, exc.details),
         )
 
     @app.exception_handler(StarletteHTTPException)
