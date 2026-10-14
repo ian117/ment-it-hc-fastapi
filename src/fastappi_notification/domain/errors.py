@@ -50,3 +50,39 @@ class UnknownChannel(Exception):
     def __init__(self, channel: str) -> None:
         self.channel = channel
         super().__init__(f"Unknown channel: {channel}")
+
+
+class InvalidEmail(Exception):
+    """El email no tiene formato válido (HTTP 400 `validation-error`, campo `email`)."""
+
+    def __init__(self, message: str = "Invalid email address") -> None:
+        super().__init__(message)
+
+
+class EmailAlreadyRegistered(Exception):
+    """Ya existe un usuario con ese email (HTTP 409)."""
+
+    def __init__(self, message: str = "Email already registered") -> None:
+        super().__init__(message)
+
+
+class InvalidCredentials(Exception):
+    """Email o contraseña incorrectos; no distingue cuál (HTTP 401)."""
+
+    def __init__(self, message: str = "Invalid credentials") -> None:
+        super().__init__(message)
+
+
+class InvalidResetToken(Exception):
+    """Token de reseteo inexistente, vencido o ya usado (HTTP 400)."""
+
+    def __init__(self, message: str = "Invalid or expired reset token") -> None:
+        super().__init__(message)
+
+
+class UserNotFound(Exception):
+    """El usuario no existe (p. ej. JWT válido de un usuario ya borrado; HTTP 401)."""
+
+    def __init__(self, id: Optional[UUID] = None) -> None:
+        self.id = id
+        super().__init__("User not found" if id is None else f"User not found: {id}")

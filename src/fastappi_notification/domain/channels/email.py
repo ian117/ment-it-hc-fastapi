@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import html
-import re
 
 from fastappi_notification.domain.channels.policy import ChannelDraft, OutboundMessage
+from fastappi_notification.domain.email import EMAIL_PATTERN, MAX_EMAIL_LENGTH
 from fastappi_notification.domain.errors import ChannelRuleViolation
-
-_EMAIL_RE = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
-_MAX_LENGTH = 320
 
 
 class EmailPolicy:
@@ -15,7 +12,7 @@ class EmailPolicy:
 
     def prepare(self, draft: ChannelDraft) -> OutboundMessage:
         recipient = draft.recipient
-        if len(recipient) > _MAX_LENGTH or _EMAIL_RE.fullmatch(recipient) is None:
+        if len(recipient) > MAX_EMAIL_LENGTH or EMAIL_PATTERN.fullmatch(recipient) is None:
             raise ChannelRuleViolation(
                 [{"field": "payload.recipient", "message": "must be a valid email address (max 320 characters)"}]
             )
