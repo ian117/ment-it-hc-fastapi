@@ -13,9 +13,8 @@ __pycache__/
 .env
 .claude/
 
-# Tests y docs de proceso: no van a la imagen de la app.
+# Tests: no van a la imagen de la app.
 tests/
-PROGRESS.md
 
 # Docker y CI (no se necesitan dentro del contexto).
 Dockerfile

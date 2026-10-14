@@ -113,7 +113,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             400,
             "channel-rule-violation",
             "Channel rule violation",
-            "The notification does not satisfy the channel rules",
+            str(exc),
             exc.violations,
         )
 

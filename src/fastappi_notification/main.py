@@ -26,7 +26,7 @@ def create_app() -> FastAPI:
     _configure_logging()
     app = FastAPI(title="Notifications API", version="0.1.0")
 
-    # slowapi resuelve el limiter desde app.state (criterio 7).
+    # slowapi resuelve el limiter desde app.state.
     app.state.limiter = limiter
 
     app.add_middleware(SecurityHeadersMiddleware)

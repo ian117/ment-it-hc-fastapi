@@ -20,7 +20,7 @@ uv run alembic downgrade -1
 docker compose up --build            # todo containerizado (db + migrate + app)
 ```
 
-## Estructura objetivo (hexagonal)
+## Estructura (hexagonal)
 
 ```
 src/fastappi_notification/
@@ -42,12 +42,6 @@ src/fastappi_notification/
 - Los errores de validación de request devuelven 400 (se sobrescribe el 422 por defecto de FastAPI).
 - Toda migración debe poder hacer `downgrade` sin dejar tipos huérfanos.
 
-## Pendiente respecto al diseño
+## Estado respecto al diseño
 
-Ver la sección 7 de `../docs/diseno-notificaciones.md`:
-- IDs int → UUID.
-- JSON de snake_case → camelCase.
-- `/auth/me`.
-- Problem Details.
-- Columnas `attempts` y `updated_at`.
-- Regla de `PATCH` (solo `failed`, con reenvío).
+Sin pendientes: el stack implementa el diseño completo (notificaciones y auth) y cumple `../contract/openapi.yaml`. Las decisiones están en `../docs/adr/` (001–014). Si el diseño cambia, se corrige primero allí.

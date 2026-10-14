@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     """Configuración de la aplicación, leída del entorno.
 
     Los valores por defecto sirven para desarrollo local; en Docker y en
-    producción todo llega por variables de entorno. `jwt_secret` no tiene
-    un default utilizable a propósito: si nadie lo define, el arranque falla.
+    producción todo llega por variables de entorno (o un `.env`). El default de
+    `jwt_secret` es inseguro a propósito: en producción hay que definir uno propio.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

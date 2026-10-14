@@ -1,115 +1,155 @@
 # Sistema de Notificaciones — FastAPI
 
-API REST para que usuarios autenticados gestionen y envíen notificaciones por
-distintos canales (Email, SMS, Push). El envío es **simulado**: no se integra
-ningún proveedor real. El foco del proyecto es el **diseño**: sumar un canal no
-debe obligar a tocar la lógica de envío existente.
+API REST para que usuarios autenticados creen y envíen notificaciones por email, SMS y push. La entrega es **simulada**: no hay proveedores reales. Es la implementación FastAPI del diseño compartido con la versión NestJS: mismo contrato HTTP ([`../contract/openapi.yaml`](../contract/openapi.yaml)), mismo dominio y mismo esquema de base de datos. El diseño está en [`../docs/diseno-notificaciones.md`](../docs/diseno-notificaciones.md) y las decisiones en [`../docs/adr/`](../docs/adr/).
 
 ## Stack
 
-- **Python 3.10 + FastAPI**
-- **PostgreSQL** con **SQLAlchemy 2.0** (sync) y **psycopg3**
-- **Alembic** para migraciones versionadas y reversibles
-- **Pydantic v2** para validación
-- **PyJWT** (tokens) y **pwdlib + argon2** (hashing)
-- **slowapi** para rate limiting
-- **uv** para dependencias y build
-- **Docker / docker compose** para levantar todo
+Python 3.10 · FastAPI · SQLAlchemy 2.0 (sync, psycopg3) · Alembic · Pydantic v2 · PyJWT · pwdlib + argon2 · slowapi · PostgreSQL 16 · pytest · uv · Docker Compose
 
----
+## Estructura (hexagonal, ADR-001)
+
+```
+src/fastappi_notification/
+  domain/          # entidades (User, PasswordResetToken, Notification), Email, políticas de canal,
+                   # errores de dominio. Dataclasses; sin fastapi, sqlalchemy ni pydantic.
+  application/     # casos de uso, puertos (repositorios, Clock, IdGenerator, hasher, emisor de tokens)
+                   # y registro de gateways
+  infrastructure/
+    persistence/   # modelos SQLAlchemy, mappers y repositorios (el modelo ORM nunca sale de aquí)
+    channels/      # gateways simulados de email, sms y push
+    security/      # Argon2PasswordHasher, JwtTokenIssuer/Verifier, generador de tokens de reseteo
+    clock.py       # SystemClock y UuidIdGenerator
+  api/             # routers, esquemas Pydantic (camelCase), dependencias, Problem Details, OpenAPI
+  core/            # settings, engine/sesión, rate limiter (slowapi), cabeceras de seguridad
+  container.py     # raíz de composición: único lugar que conoce las clases concretas
+  main.py          # create_app() y /health
+alembic/           # migraciones
+tests/             # domain/, application/, infrastructure/, api/ y e2e
+```
+
+`api/deps.py` solo expone `Depends()`; el cableado real vive en `container.py`. Los routers únicamente traducen HTTP a casos de uso.
 
 ## Puesta en marcha
 
-### Opción A — Docker (recomendada, no requiere instalar nada en el host)
+### Docker (no requiere nada en el host)
 
 ```bash
 docker compose up --build
 ```
 
-Esto levanta tres servicios en una red propia:
+Levanta `db` (PostgreSQL con healthcheck), `migrate` (corre `alembic upgrade head` y termina) y `app`, que arranca solo cuando las migraciones terminaron. API en `http://localhost:8000` (`/docs`, `/openapi.json`, `/health`). El servicio `app` recibe `DATABASE_URL` y `JWT_SECRET`; el resto de variables usa sus defaults.
 
-1. `db` (PostgreSQL) con healthcheck.
-2. `migrate`: corre `alembic upgrade head` y termina.
-3. `app`: arranca **solo cuando las migraciones terminaron con éxito**, con su
-   propio healthcheck en `/health`.
+Variables del compose (opcionales): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `JWT_SECRET`, `APP_PORT`.
 
-La API queda en `http://localhost:8000` (documentación en
-`http://localhost:8000/docs`).
+### Local
 
-### Opción B — Desarrollo local
-
-Requiere [uv](https://docs.astral.sh/uv/) y un PostgreSQL accesible.
+Requiere [uv](https://docs.astral.sh/uv/) y Docker para la base.
 
 ```bash
-# 1. Base de datos de desarrollo (ejemplo con Docker, en el puerto 5434)
-docker run -d --name notif-dev-db \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=notifications \
-  -p 5434:5432 postgres:16-alpine
-
-# 2. Dependencias
+docker run -d --name fastapi-notif-dev-db -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=notifications -p 5434:5432 postgres:16-alpine   # Postgres de desarrollo en :5434
 uv sync
-
-# 3. Migraciones
 uv run alembic upgrade head
-
-# 4. Servidor
 uv run uvicorn fastappi_notification.main:app --reload --port 8000
 ```
 
-Copiá `.env.example` a `.env` para ajustar la configuración.
+Copia `.env.example` a `.env` para cambiar la configuración (los defaults ya apuntan a `localhost:5434`).
 
----
+### Variables de entorno
 
-## Variables de entorno
+Se leen en `src/fastappi_notification/core/config.py` (entorno o `.env`).
 
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5434/notifications` | Conexión a PostgreSQL (driver psycopg3). |
-| `JWT_SECRET` | `dev-only-insecure-secret-change-me` | Secreto para firmar los JWT. **Obligatorio cambiarlo en producción.** |
+| Variable | Default | Efecto |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5434/notifications` | Conexión a PostgreSQL (psycopg3). La usan la app y Alembic. |
+| `JWT_SECRET` | `dev-only-insecure-secret-change-me` | Firma de los JWT (HS256). El default es inseguro a propósito: **en producción define uno propio**. |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo de firma. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Vigencia del token de acceso. |
-| `RESET_TOKEN_EXPIRE_MINUTES` | `15` | Vigencia del token de reseteo. |
-| `LOGIN_RATE_LIMIT` | `5/minute` | Umbral de fuerza bruta para el login. |
-| `RESET_REQUEST_RATE_LIMIT` | `5/minute` | Umbral para `POST /auth/password-reset/request`. |
-| `ENVIRONMENT` | `development` | Con `production`, el reseteo no devuelve `resetToken`. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Vigencia del JWT; `expiresIn` = minutos × 60. |
+| `RESET_TOKEN_EXPIRE_MINUTES` | `15` | Vigencia del token de reseteo de contraseña. |
+| `ENVIRONMENT` | `development` | Si es `production`, `POST /auth/password-reset/request` nunca devuelve `resetToken`. Con cualquier otro valor lo devuelve cuando el email existe. |
+| `LOGIN_RATE_LIMIT` | `5/minute` | Límite por IP de `POST /auth/login` (formato slowapi). |
+| `RESET_REQUEST_RATE_LIMIT` | `5/minute` | Límite por IP de `POST /auth/password-reset/request`. |
 
----
+Solo para tests: `TEST_DATABASE_URL` (default `postgresql+psycopg://postgres:postgres@localhost:5434/notifications_test`).
 
 ## Endpoints
 
-Documentación navegable en `/docs` (Swagger) y `/redoc`.
+JSON en camelCase. Los endpoints de notificaciones requieren `Authorization: Bearer <accessToken>` y siempre operan sobre las notificaciones del usuario autenticado. Cualquier ruta protegida sin token válido responde `401`.
 
-### Autenticación
+| Método | Ruta | Éxito | Errores |
+|---|---|---|---|
+| POST | `/auth/register` | 201 `{id, email, createdAt}` | 400, 409 |
+| POST | `/auth/login` | 200 `{accessToken, tokenType: "Bearer", expiresIn}` | 400, 401, 429 |
+| GET | `/auth/me` | 200 `{id, email, createdAt}` | 401 |
+| POST | `/auth/password-reset/request` | 202 `{message}` (+ `resetToken` si aplica) | 400, 429 |
+| POST | `/auth/password-reset/confirm` | 200 `{message}` | 400 |
+| POST | `/notifications` | 201 `Notification` (`status` `sent` o `failed`) | 400, 401 |
+| GET | `/notifications?page=1&limit=20` | 200 `{data, total, page, limit}`, más nuevas primero, `limit ≤ 100` | 400, 401 |
+| GET | `/notifications/{id}` | 200 `Notification` | 401, 404 |
+| PATCH | `/notifications/{id}` | 200 `Notification` tras el reenvío | 400, 401, 404, 409 |
+| DELETE | `/notifications/{id}` | 204 | 401, 404 |
 
-| Método | Ruta | Descripción | Auth |
-|--------|------|-------------|------|
-| `POST` | `/auth/register` | Registro con email y contraseña. `409` si el email ya existe. | — |
-| `POST` | `/auth/login` | Devuelve un token de acceso. `429` al superar el umbral. | — |
-| `POST` | `/auth/password-reset/request` | Solicita un reseteo. Responde igual exista o no el email. | — |
-| `POST` | `/auth/password-reset/confirm` | Cambia la contraseña con un token válido. | — |
+Creación y edición (en el PATCH todos los campos son opcionales y `channel` no se acepta):
 
-### Notificaciones (requieren `Authorization: Bearer <token>`)
-
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `POST` | `/notifications` | Crea una notificación y dispara el envío por su canal. |
-| `GET` | `/notifications?page=1&limit=20` | Lista las propias, paginadas, más nuevas primero. |
-| `GET` | `/notifications/{id}` | Consulta una propia. `404` si no existe o es ajena. |
-| `PATCH` | `/notifications/{id}` | Modifica una propia (re-valida las reglas del canal). |
-| `DELETE` | `/notifications/{id}` | Borra una propia. `204` sin body. |
-
-**Payload de creación** — el objeto `payload` lleva los datos propios del canal:
-
-```jsonc
-// email
-{ "title": "Hola", "content": "...", "channel": "email", "payload": { "recipient": "a@ex.com" } }
-// sms   (content <= 160)
-{ "title": "Hola", "content": "...", "channel": "sms",   "payload": { "phone": "+541112345678" } }
-// push
-{ "title": "Hola", "content": "...", "channel": "push",  "payload": { "device_token": "abc123" } }
+```json
+{ "title": "Hola", "content": "...", "channel": "sms", "payload": { "recipient": "+5219611234567" } }
 ```
 
----
+El esquema navegable y generado por la app está en `/docs` y `/openapi.json`.
+
+### Errores: Problem Details (RFC 9457, ADR-006/012/014)
+
+Todos los errores son `application/problem+json`; `type` es `https://errors.local/<slug>` y `instance` es la ruta de la request. Nunca se exponen trazas ni detalles internos. La validación de request devuelve **400** (no el 422 de FastAPI), con `errors[].field` en notación de puntos.
+
+```json
+{
+  "type": "https://errors.local/notification-not-editable",
+  "title": "Notification not editable",
+  "status": 409,
+  "detail": "Only failed notifications can be edited",
+  "instance": "/notifications/3f1c…"
+}
+```
+
+Slugs: `validation-error`, `unknown-channel`, `channel-rule-violation` (400); `unauthorized` (401); `notification-not-found`, `not-found` (404); `notification-not-editable`, `email-already-registered` (409); `invalid-reset-token` (400); `too-many-requests` (429); `internal-error` (500).
+
+## Reglas de dominio observables
+
+- Estados de `Notification`: `pending` → `sent` (terminal) o `failed`. Solo se edita una notificación en `failed`; editar vuelve a `pending` y reenvía (ADR-007, ADR-009). Cualquier otro estado responde `409`. El canal no cambia nunca: para otro canal se crea otra notificación.
+- Borrar se permite en cualquier estado.
+- Una notificación ajena o inexistente (o con un id que no es UUID) responde `404`, nunca `403`.
+- Un payload que viola las reglas del canal responde `400` y no escribe nada. SMS: destinatario E.164 y `content` ≤ 160 caracteres (se rechaza, no se trunca). Email: destinatario válido. Push: device token no vacío con formato válido (ADR-010).
+- Si el payload es válido pero la entrega falla, la respuesta es `201` con `status: "failed"`, `attempts` incrementado y `errorMessage`.
+
+## Flujo de envío sin transacción abierta (ADR-008)
+
+Crear y editar comparten el mismo final: la política del canal valida y formatea el mensaje; se guarda la notificación en `pending` (commit); se entrega por el gateway **fuera de cualquier transacción**; se marca `sent` o `failed` y se guarda de nuevo (commit). Si el proceso cae entre medias, queda un `pending` recuperable. Cada `save` del repositorio es una transacción corta.
+
+## Canales
+
+Una `ChannelPolicy` (dominio) valida y da formato; un `ChannelGateway` (infraestructura) entrega (ADR-005). Para agregar un canal, por ejemplo WhatsApp: una `WhatsAppPolicy` en `domain/channels/`, un `WhatsAppGateway` en `infrastructure/channels/` y registrar ambos en `container.py` (`policies` y `gateways`). No cambian casos de uso, routers ni migraciones (`channel` es `varchar`, ADR-004).
+
+Gateways simulados (deterministas, ADR-012): `email` y `push` fallan si el destinatario en minúsculas contiene `fail`; `sms` falla si el destinatario termina en `0000`. El resto entrega con éxito. El fallo informa `Simulated delivery failure` y cada entrega queda en el log.
+
+## Seguridad
+
+- Contraseñas con **argon2** (pwdlib); el hash nunca sale en una respuesta.
+- JWT HS256 **sin estado**: la dependencia de usuario actual valida firma, expiración, tipo y `sub`, sin consultar la base; solo `/auth/me` lee el usuario.
+- Reseteo de contraseña: en base solo se guarda el `sha256` del token, que se usa una única vez y vence a los 15 minutos. El token en claro nunca se escribe en el log. Fuera de producción, `resetToken` viaja en la respuesta (no hay canal de email todavía).
+- Anti-enumeración: el reseteo responde igual exista o no el email, y un login fallido no revela cuál dato falló.
+- Rate limit de `POST /auth/login` y `POST /auth/password-reset/request`: 5 por minuto por IP → `429`. Es **en memoria con slowapi, es decir por proceso**; con varias réplicas haría falta un backend compartido.
+- Cabeceras de seguridad HTTP en todas las respuestas.
+
+## Migraciones
+
+```bash
+uv run alembic upgrade head      # aplica
+uv run alembic downgrade -1      # revierte la última
+uv run alembic check             # verifica que los modelos no difieren de las migraciones
+uv run alembic revision --autogenerate -m "mensaje"
+```
+
+Toda migración debe ser reversible y no dejar tipos huérfanos. El esquema es el de la sección 5 del diseño.
 
 ## Tests
 
@@ -117,145 +157,9 @@ Documentación navegable en `/docs` (Swagger) y `/redoc`.
 uv run pytest
 ```
 
-- **Unitarios (rápidos, sin base):** `test_security.py` y `test_channels.py`.
-- **End-to-end (happy path contra base real):** `test_e2e.py`. Crea/usa una base
-  `notifications_test`; si no hay PostgreSQL disponible, el test se **omite**
-  (skip) y la suite sigue verde. Se puede apuntar a otra base con
-  `TEST_DATABASE_URL`.
+- **Sin base:** `tests/domain/`, `tests/application/` (fakes en memoria), `tests/infrastructure/` y `tests/api/`.
+- **Con PostgreSQL:** `test_migrations.py`, `test_auth_repositories.py` y los e2e `test_auth_e2e.py` y `test_notifications_e2e.py`. Usan las bases `notifications_test` y `notifications_test_migrations` en el servidor de `TEST_DATABASE_URL` (por defecto `localhost:5434`), que se recrean en cada ejecución con el esquema real de Alembic. Si no hay servidor, esos tests se **omiten** (skip) y la suite sigue en verde.
 
-Reversibilidad de migraciones (criterio de aceptación 10):
+## Más documentación
 
-```bash
-uv run alembic downgrade base   # deja la base sin tablas ni tipos huérfanos
-uv run alembic upgrade head     # la reconstruye
-```
-
----
-
-## Decisiones de diseño (y sus límites)
-
-### Contrato de canal: `abc.ABC`, no `typing.Protocol`
-
-Elegí una **clase base abstracta** (tipado **nominal**) y no un `Protocol`
-(tipado **estructural**) porque además del contrato quiero **compartir
-comportamiento**: `validate()` es concreto en la base —parsea el payload contra
-el esquema Pydantic de cada canal y unifica el error— y solo `deliver()` queda
-abstracto. Con `Protocol` tendría el chequeo de forma pero cero reuso: cada canal
-reimplementaría el parseo y la traducción del error. `Protocol` sería lo correcto
-si aceptara objetos de terceros que no controlo; acá soy dueño de todos los
-canales y quiero obligarlos a pasar por un mismo esqueleto. Con `Protocol` además
-perdería la garantía de `ABC` de fallar al **instanciar** una subclase incompleta,
-no recién al llamarla. Detalle en `channels/base.py`.
-
-### El despachador dueña el orden; los canales no tocan la base
-
-El orden invariante —validar → persistir en `pending` → entregar → registrar el
-resultado— vive en `services/notifications.py`, no en los canales. Así un canal
-**no puede** registrar un envío que nunca se validó, y como los canales operan
-sobre datos planos (sin sesión de DB) se **testean sin levantar la base**.
-
-### Dónde vive la validación específica de cada canal
-
-En el **esquema Pydantic que cada canal declara** (`payload_schema`) más un hook
-`validate_message` para reglas que exceden al payload (el largo del SMS). La
-ejecuta el despachador **antes de abrir cualquier escritura**, así un payload
-inválido devuelve `400` sin dejar nada en la base. Está co-ubicada con el canal:
-"lo que cambia vive en cada canal".
-
-### `channel` como texto libre, sin ENUM nativo ni CHECK
-
-La columna `channel` es `VARCHAR` sin constraint de valores. La lista de canales
-válidos vive en el **registry de la aplicación**, no en la base. Beneficio: sumar
-un canal es un cambio 100% de código, sin migración.
-**Límite conocido:** la base no impide, por sí sola, insertar un `channel`
-inválido mediante un `INSERT` directo por fuera de la app; la integridad de ese
-campo depende de la validación de la aplicación.
-
-### `payload` en JSONB
-
-Los datos propios de cada canal viven en una columna JSONB, no en columnas
-tipadas. Mantiene el esquema **agnóstico del canal**: sumar un canal con otros
-campos no altera la tabla.
-**Límite conocido:** no hay validación a nivel de base sobre la forma del
-`payload`; la garantiza la validación del canal.
-
-### SQLAlchemy sync y la transacción sobre el envío
-
-El guardado, el envío simulado y la actualización del estado corren en **una
-sola transacción**. Esto se sostiene **solo porque el envío es simulado** (es
-código en memoria, no una llamada de red).
-**Límite conocido:** con un proveedor real no se mantiene una transacción
-abierta sobre una llamada de red —bloquea una conexión del pool durante todo el
-round-trip y un timeout se lleva puesta la transacción—. La forma correcta ahí
-es *commitear en `pending` → enviar → actualizar el estado* (o un patrón outbox).
-El estado `pending` ya existe para ese camino. Por lo mismo elegí sync sobre
-async: sin I/O real que esperar, el manejo transaccional queda más simple.
-
-### SMS > 160 y email inválido: se rechazan, no se degradan
-
-Un SMS de más de 160 caracteres devuelve `400`; **no se trunca en silencio**.
-Un email con destinatario inválido devuelve `400`. Perder o mutilar contenido
-sin avisar es peor que fallar fuerte.
-
-### `404` en vez de `403` para recursos ajenos
-
-La consulta filtra por id **y** dueño en la misma cláusula, así "no existe" y "no
-es tuyo" son indistinguibles desde afuera: un `403` le confirmaría al atacante
-que el recurso existe.
-
-### Un envío fallido devuelve `201`, no `5xx`
-
-Si el payload era válido, la notificación se creó bien; lo que falla es la
-entrega. Se devuelve `201` con estado `failed`, y el motivo queda **persistido y
-logueado**. Los errores que sí son culpa del request se atajan antes con `400`.
-
-### Seguridad de auth
-
-- **Unicidad de email** garantizada por una constraint `UNIQUE` en la base, no
-  por un chequeo en código: dos registros concurrentes no pueden colarse ambos.
-- **Hash de contraseña** con argon2; nunca se serializa (las respuestas usan
-  `UserOut`, que no tiene ese campo).
-- **Token de reseteo**: en la base se guarda solo su `sha256`. Robar la fila no
-  alcanza para resetear la contraseña.
-  **Límite conocido:** el envío del token es simulado (se loguea); no hay
-  integración real de email.
-- **Login y reset** responden igual exista o no el email (no revelan qué emails
-  están registrados). El registro sí devuelve `409` en duplicado, como pide el
-  enunciado.
-- **Rate limiting** en memoria por IP.
-  **Límite conocido:** con varias réplicas hace falta un backend compartido
-  (Redis) para que el conteo sea global y no por-proceso.
-- **Cabeceras de seguridad HTTP** en todas las respuestas.
-
-### Operación
-
-- **`JWT_SECRET`** tiene un default de desarrollo para que un clon limpio levante
-  sin fricción.
-  **Límite conocido:** en producción hay que pasar un secreto propio; el default
-  es inseguro a propósito.
-
----
-
-## Autoevaluación
-
-1. **¿Qué archivos tocarías para agregar WhatsApp?** Un archivo nuevo
-   `channels/whatsapp.py` con `@register class WhatsAppChannel(Channel)` (su
-   `payload_schema` y su `deliver`) y un import en `channels/__init__.py`. Nada
-   más: ni el despachador, ni el router, ni los modelos, ni la base.
-2. **¿Por qué `ABC` y no `Protocol`?** Ver arriba: quiero compartir
-   comportamiento, no solo forma, y la garantía de instanciación de `ABC`.
-3. **¿Y si el proveedor tarda 30s?** Con el diseño actual (transacción sobre el
-   envío) dolería primero en el pool de conexiones. Por eso está documentado el
-   camino correcto para un proveedor real: `pending` → enviar → actualizar.
-4. **¿Cómo probás un canal sin base?** Los canales son puros: `test_channels.py`
-   los ejercita en memoria, sin sesión de DB.
-5. **¿Qué cambiaría para producción?** Sacar la transacción de alrededor del
-   envío (outbox), mover el rate limit a Redis, e integrar un envío de email real
-   para los tokens de reseteo.
-
----
-
-## Checklist
-
-El estado detallado (hitos y criterios) vive en [`PROGRESS.md`](PROGRESS.md), y
-se mantiene honesto: lo pendiente figura como pendiente.
+Decisiones de arquitectura (001–014), diseño y contrato: [`../docs/adr/`](../docs/adr/), [`../docs/diseno-notificaciones.md`](../docs/diseno-notificaciones.md).

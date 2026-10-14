@@ -1,7 +1,7 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-# Cabeceras de seguridad HTTP (criterio 8). Conjunto conservador y sin estado.
+# Cabeceras de seguridad HTTP. Conjunto conservador y sin estado.
 # HSTS solo tiene efecto real detrás de TLS; se incluye porque en producción la
 # app va detrás de un proxy con HTTPS.
 _SECURITY_HEADERS = {

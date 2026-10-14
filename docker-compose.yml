@@ -20,7 +20,7 @@ services:
 
   # Servicio de un solo uso: corre las migraciones y termina. La app solo
   # arranca cuando este servicio finalizó con éxito, así ninguna request llega
-  # antes de que el esquema esté listo (criterio 13), sin pasos manuales.
+  # antes de que el esquema esté listo, sin pasos manuales.
   migrate:
     build: .
     command: ["alembic", "upgrade", "head"]
@@ -58,7 +58,7 @@ services:
 volumes:
   pgdata:
 
-# Red propia y explícita para los tres servicios (criterio 13).
+# Red propia y explícita para los tres servicios.
 networks:
   notifnet:
     driver: bridge

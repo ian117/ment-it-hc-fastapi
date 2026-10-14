@@ -134,6 +134,8 @@ def test_unknown_channel(client):
 def test_channel_rule_violation_exposes_violations(client):
     body = _assert_problem(client.get("/rule"), 400, "channel-rule-violation", "Channel rule violation")
     assert body["errors"] == [{"field": "payload.recipient", "message": "bad"}]
+    # El detail lleva el mensaje concreto del dominio, igual que NestJS (F9).
+    assert body["detail"] == "payload.recipient: bad"
 
 
 def test_email_already_registered(client):
@@ -200,3 +202,4 @@ def test_invalid_json_is_400(client):
 def test_rate_limit_is_429_problem(client):
     assert client.get("/limited").status_code == 200
     _assert_problem(client.get("/limited"), 429, "too-many-requests", "Too many requests")
+
