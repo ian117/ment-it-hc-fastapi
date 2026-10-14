@@ -51,7 +51,7 @@ def test_register_login_then_create_with_the_issued_token(client):
     assert client.post("/auth/register", json={"email": email, "password": "secret12345"}).status_code == 201
     r = client.post("/auth/login", json={"email": email, "password": "secret12345"})
     assert r.status_code == 200
-    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {r.json()['accessToken']}"}
 
     r = client.post(
         "/notifications",

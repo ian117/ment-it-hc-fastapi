@@ -11,6 +11,15 @@ from sqlalchemy.orm import sessionmaker
 from tests.db_utils import TEST_DATABASE_URL, recreate_database, upgrade
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """El limiter es en memoria y global: cada test parte con los contadores en cero."""
+    from fastappi_notification.core.limiter import limiter
+
+    limiter.reset()
+    yield
+
+
 @pytest.fixture(scope="session")
 def migrated_database() -> str:
     """Base de tests limpia con el esquema construido por `alembic upgrade head`."""
@@ -63,14 +72,26 @@ def make_user(client):
     """
     import uuid
 
-    from fastappi_notification.core.security import create_access_token
+    from fastappi_notification import container
 
     def _make() -> UserSession:
         email = f"user-{uuid.uuid4().hex[:12]}@example.com"
         r = client.post("/auth/register", json={"email": email, "password": "secret12345"})
         assert r.status_code == 201, r.text
         user_id = r.json()["id"]
-        token = create_access_token(user_id)
+        token = container.token_issuer.issue(uuid.UUID(user_id)).access_token
         return UserSession(user_id, email, {"Authorization": f"Bearer {token}"})
 
     return _make
+
+
+@pytest.fixture
+def db_session(migrated_database):
+    """Sesión SQLAlchemy directa sobre la base de tests migrada (para repositorios y SQL crudo)."""
+    engine = create_engine(migrated_database)
+    session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()

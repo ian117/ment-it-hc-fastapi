@@ -57,3 +57,19 @@ def test_con_usuario_existente_verifica_una_sola_vez():
     w.hasher.verify_calls = 0
     w.login.execute(email=EMAIL, password=PASSWORD)
     assert w.hasher.verify_calls == 1
+
+
+def test_login_with_a_provided_decoy_never_hashes_one_per_instance():
+    """La composición crea un `Login` por request: el señuelo llega ya hecho y no se
+    hashea otro, así el tiempo no delata si el email existe (ADR-013)."""
+    from fastappi_notification.application.use_cases.login import Login
+    from fastappi_notification.domain.errors import InvalidCredentials
+    from fastappi_notification.domain.password_hash import PasswordHash
+
+    w = AuthWorld()
+    for _ in range(2):  # dos instancias, como dos requests
+        login = Login(w.users, w.hasher, w.issuer, decoy=PasswordHash("hashed:decoy"))
+        with pytest.raises(InvalidCredentials):
+            login.execute(email="ghost@example.com", password="whatever1")
+    assert w.hasher.hash_calls == []
+    assert w.hasher.verify_calls == 2

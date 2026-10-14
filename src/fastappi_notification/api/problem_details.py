@@ -19,9 +19,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..domain.errors import (
     ChannelRuleViolation,
+    EmailAlreadyRegistered,
+    InvalidCredentials,
+    InvalidEmail,
+    InvalidResetToken,
     NotificationNotEditable,
     NotificationNotFound,
     UnknownChannel,
+    UserNotFound,
 )
 
 logger = logging.getLogger("fastappi_notification")
@@ -37,16 +42,6 @@ _GENERIC: dict[int, tuple[str, str]] = {
     409: ("conflict", "Conflict"),
     429: ("too-many-requests", "Too many requests"),
 }
-
-
-class AppError(Exception):
-    """Error HTTP genérico del auth heredado (hasta F7). Se traduce según su status."""
-
-    def __init__(self, status_code: int, message: str, error_type: str = "error") -> None:
-        self.status_code = status_code
-        self.message = message
-        self.error_type = error_type  # ignorado: el slug sale del status
-        super().__init__(message)
 
 
 def _generic(status: int) -> tuple[str, str]:
@@ -122,6 +117,42 @@ def register_exception_handlers(app: FastAPI) -> None:
             exc.violations,
         )
 
+    @app.exception_handler(EmailAlreadyRegistered)
+    async def _email_taken(request: Request, exc: EmailAlreadyRegistered):
+        return problem(
+            request, 409, "email-already-registered", "Email already registered", "Email already registered"
+        )
+
+    @app.exception_handler(InvalidCredentials)
+    async def _invalid_credentials(request: Request, exc: InvalidCredentials):
+        return problem(request, 401, "unauthorized", "Unauthorized", "Invalid credentials")
+
+    @app.exception_handler(UserNotFound)
+    async def _user_not_found(request: Request, exc: UserNotFound):
+        # Token válido de un usuario que ya no existe: mismo 401 que cualquier token inválido.
+        return problem(request, 401, "unauthorized", "Unauthorized", "Invalid token")
+
+    @app.exception_handler(InvalidResetToken)
+    async def _invalid_reset_token(request: Request, exc: InvalidResetToken):
+        return problem(
+            request,
+            400,
+            "invalid-reset-token",
+            "Invalid reset token",
+            "Invalid, expired or already used token",
+        )
+
+    @app.exception_handler(InvalidEmail)
+    async def _invalid_email(request: Request, exc: InvalidEmail):
+        return problem(
+            request,
+            400,
+            "validation-error",
+            "Validation failed",
+            "Request validation failed",
+            [{"field": "email", "message": str(exc)}],
+        )
+
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):
         errors = [
@@ -138,11 +169,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RateLimitExceeded)
     async def _rate_limit(request: Request, exc: RateLimitExceeded):
         return problem(request, 429, "too-many-requests", "Too many requests", "Rate limit exceeded")
-
-    @app.exception_handler(AppError)
-    async def _app_error(request: Request, exc: AppError):
-        slug, title = _generic(exc.status_code)
-        return problem(request, exc.status_code, slug, title, exc.message)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception(request: Request, exc: StarletteHTTPException):

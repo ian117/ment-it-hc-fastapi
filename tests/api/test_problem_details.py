@@ -9,12 +9,17 @@ from pydantic import BaseModel, ConfigDict
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from fastappi_notification.api.problem_details import AppError, register_exception_handlers
+from fastappi_notification.api.problem_details import register_exception_handlers
 from fastappi_notification.domain.errors import (
     ChannelRuleViolation,
+    EmailAlreadyRegistered,
+    InvalidCredentials,
+    InvalidEmail,
+    InvalidResetToken,
     NotificationNotEditable,
     NotificationNotFound,
     UnknownChannel,
+    UserNotFound,
 )
 
 
@@ -51,9 +56,25 @@ def _app() -> FastAPI:
     def rule():
         raise ChannelRuleViolation([{"field": "payload.recipient", "message": "bad"}])
 
-    @app.get("/app-error")
-    def app_error():
-        raise AppError(409, "Email already registered", "conflict")
+    @app.get("/email-taken")
+    def email_taken():
+        raise EmailAlreadyRegistered()
+
+    @app.get("/invalid-credentials")
+    def invalid_credentials():
+        raise InvalidCredentials()
+
+    @app.get("/user-not-found")
+    def user_not_found():
+        raise UserNotFound(uuid.uuid4())
+
+    @app.get("/invalid-reset-token")
+    def invalid_reset_token():
+        raise InvalidResetToken()
+
+    @app.get("/invalid-email")
+    def invalid_email():
+        raise InvalidEmail()
 
     @app.get("/http-401")
     def http_401():
@@ -115,9 +136,35 @@ def test_channel_rule_violation_exposes_violations(client):
     assert body["errors"] == [{"field": "payload.recipient", "message": "bad"}]
 
 
-def test_app_error_maps_by_status(client):
-    body = _assert_problem(client.get("/app-error"), 409, "conflict", "Conflict")
+def test_email_already_registered(client):
+    body = _assert_problem(
+        client.get("/email-taken"), 409, "email-already-registered", "Email already registered"
+    )
     assert body["detail"] == "Email already registered"
+
+
+def test_invalid_credentials(client):
+    body = _assert_problem(client.get("/invalid-credentials"), 401, "unauthorized", "Unauthorized")
+    assert body["detail"] == "Invalid credentials"
+
+
+def test_user_not_found_is_a_generic_401_that_does_not_leak_the_id(client):
+    r = client.get("/user-not-found")
+    body = _assert_problem(r, 401, "unauthorized", "Unauthorized")
+    assert body["detail"] == "Invalid token"
+    assert "errors" not in body
+
+
+def test_invalid_reset_token(client):
+    body = _assert_problem(
+        client.get("/invalid-reset-token"), 400, "invalid-reset-token", "Invalid reset token"
+    )
+    assert body["detail"] == "Invalid, expired or already used token"
+
+
+def test_invalid_email_is_a_validation_error_on_email(client):
+    body = _assert_problem(client.get("/invalid-email"), 400, "validation-error", "Validation failed")
+    assert body["errors"] == [{"field": "email", "message": "Invalid email address"}]
 
 
 def test_http_exception_401_and_unknown_route(client):

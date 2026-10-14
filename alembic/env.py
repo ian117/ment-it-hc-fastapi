@@ -8,7 +8,7 @@ from fastappi_notification.core.db import Base
 
 # Importar los modelos registra sus tablas en Base.metadata (necesario para
 # que autogenerate las "vea").
-import fastappi_notification.models  # noqa: F401
+import fastappi_notification.infrastructure.persistence  # noqa: F401
 
 config = context.config
 

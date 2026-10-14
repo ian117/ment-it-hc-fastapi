@@ -1,128 +1,104 @@
-import logging
-from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Request, status
 
+from ...application.use_cases.confirm_password_reset import ConfirmPasswordReset
+from ...application.use_cases.get_current_user import GetCurrentUser
+from ...application.use_cases.login import Login
+from ...application.use_cases.register_user import RegisterUser
+from ...application.use_cases.request_password_reset import RequestPasswordReset
 from ...core.config import get_settings
-from ...core.db import get_db
-from ..openapi import problem_responses
-from ..problem_details import AppError
 from ...core.limiter import limiter
-from ...core.security import (
-    create_access_token,
-    generate_reset_token,
-    hash_password,
-    hash_reset_token,
-    verify_password,
-)
-from ...models import PasswordResetToken, User
-from ...schemas.auth import (
+from .. import deps
+from ..openapi import problem_responses
+from ..schemas.auth import (
+    AccessTokenResponse,
     LoginRequest,
+    MessageResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
-    Token,
-    UserCreate,
-    UserOut,
+    PasswordResetRequestedResponse,
+    RegisterRequest,
+    UserResponse,
 )
-
-logger = logging.getLogger("fastappi_notification")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Hash "señuelo" con la forma de uno real. Cuando el email no existe, igual
-# corremos una verificación contra este valor para que el tiempo de respuesta
-# no delate si el email está registrado (mitiga enumeración por timing).
-_DUMMY_HASH = hash_password("dummy-password-for-constant-time-check")
+RESET_REQUESTED_MESSAGE = "If the email exists, a reset link was sent"
+PASSWORD_UPDATED_MESSAGE = "Password updated"
 
 
 @router.post(
     "/register",
-    response_model=UserOut,
+    response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     responses=problem_responses(400, 409),
 )
-def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    user = User(email=payload.email, hashed_password=hash_password(payload.password))
-    db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
-        # La unicidad la garantiza la constraint de la base, no un chequeo
-        # previo: así dos registros concurrentes no pueden colarse ambos.
-        db.rollback()
-        raise AppError(status.HTTP_409_CONFLICT, "Email already registered", "conflict")
-    db.refresh(user)
-    return user
+def register(
+    body: RegisterRequest,
+    use_case: RegisterUser = Depends(deps.register_user_use_case),
+) -> UserResponse:
+    user = use_case.execute(email=body.email, password=body.password)
+    return UserResponse.from_domain(user)
 
 
-@router.post("/login", response_model=Token, responses=problem_responses(400, 401, 429))
+@router.post(
+    "/login",
+    response_model=AccessTokenResponse,
+    responses=problem_responses(400, 401, 429),
+)
 @limiter.limit(get_settings().login_rate_limit)
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
-    user = db.scalar(select(User).where(User.email == payload.email))
+def login(
+    request: Request,  # requerido por slowapi
+    body: LoginRequest,
+    use_case: Login = Depends(deps.login_use_case),
+) -> AccessTokenResponse:
+    issued = use_case.execute(email=body.email, password=body.password)
+    return AccessTokenResponse(
+        access_token=issued.access_token, token_type="Bearer", expires_in=issued.expires_in
+    )
 
-    # Verificamos siempre (aun sin usuario) para no filtrar por timing y para
-    # devolver un único error genérico: el login no revela qué emails existen.
-    hashed = user.hashed_password if user else _DUMMY_HASH
-    valid = verify_password(payload.password, hashed)
 
-    if not user or not valid:
-        raise AppError(status.HTTP_401_UNAUTHORIZED, "Invalid credentials", "unauthorized")
-
-    return Token(access_token=create_access_token(str(user.id)))
+@router.get("/me", response_model=UserResponse, responses=problem_responses(401))
+def me(
+    user_id: UUID = Depends(deps.current_user_id),
+    use_case: GetCurrentUser = Depends(deps.get_current_user_use_case),
+) -> UserResponse:
+    return UserResponse.from_domain(use_case.execute(user_id=user_id))
 
 
 @router.post(
     "/password-reset/request",
+    response_model=PasswordResetRequestedResponse,
+    response_model_exclude_unset=True,
     status_code=status.HTTP_202_ACCEPTED,
     responses=problem_responses(400, 429),
 )
-def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)) -> dict:
-    """Siempre responde igual, exista o no el email (criterios 5 y 8).
+@limiter.limit(get_settings().reset_request_rate_limit)
+def request_password_reset(
+    request: Request,  # requerido por slowapi
+    body: PasswordResetRequest,
+    expose_reset_token: bool = Depends(deps.expose_reset_token),
+    use_case: RequestPasswordReset = Depends(deps.request_password_reset_use_case),
+) -> PasswordResetRequestedResponse:
+    """Idéntica exista o no el email; `resetToken` solo si existe y no es producción.
 
-    Si el usuario existe, generamos un token y (en un sistema real) lo
-    mandaríamos por email. Acá el envío es simulado: lo dejamos en el log.
+    El token en claro nunca se escribe en el log (ADR-014).
     """
-    settings = get_settings()
-    user = db.scalar(select(User).where(User.email == payload.email))
-    if user:
-        raw, token_hash = generate_reset_token()
-        db.add(
-            PasswordResetToken(
-                user_id=user.id,
-                token_hash=token_hash,
-                expires_at=datetime.now(timezone.utc)
-                + timedelta(minutes=settings.reset_token_expire_minutes),
-            )
-        )
-        db.commit()
-        logger.info("Password reset token for user %s: %s", user.id, raw)
-
-    return {"message": "If the email exists, a reset link was sent"}
+    token = use_case.execute(email=body.email)
+    if token is not None and expose_reset_token:
+        return PasswordResetRequestedResponse(message=RESET_REQUESTED_MESSAGE, reset_token=token)
+    return PasswordResetRequestedResponse(message=RESET_REQUESTED_MESSAGE)
 
 
 @router.post(
-    "/password-reset/confirm", status_code=status.HTTP_200_OK, responses=problem_responses(400)
+    "/password-reset/confirm",
+    response_model=MessageResponse,
+    responses=problem_responses(400),
 )
-def confirm_password_reset(payload: PasswordResetConfirm, db: Session = Depends(get_db)) -> dict:
-    token_hash = hash_reset_token(payload.token)
-    now = datetime.now(timezone.utc)
-
-    reset = db.scalar(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == token_hash,
-            PasswordResetToken.used.is_(False),
-            PasswordResetToken.expires_at > now,
-        )
-    )
-    if reset is None:
-        raise AppError(status.HTTP_400_BAD_REQUEST, "Invalid or expired token", "invalid_token")
-
-    user = db.get(User, reset.user_id)
-    user.hashed_password = hash_password(payload.new_password)
-    reset.used = True
-    db.commit()
-
-    return {"message": "Password updated"}
+def confirm_password_reset(
+    body: PasswordResetConfirm,
+    use_case: ConfirmPasswordReset = Depends(deps.confirm_password_reset_use_case),
+) -> MessageResponse:
+    use_case.execute(token=body.token, new_password=body.new_password)
+    return MessageResponse(message=PASSWORD_UPDATED_MESSAGE)

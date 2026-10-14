@@ -18,10 +18,14 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-only-insecure-secret-change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
-    reset_token_expire_minutes: int = 30
+    reset_token_expire_minutes: int = 15
 
-    # Umbral de fuerza bruta para el login (criterio de aceptación 7).
+    # "production" desactiva `resetToken` en la respuesta de /auth/password-reset/request.
+    environment: str = "development"
+
+    # Umbrales de fuerza bruta por IP (formato de slowapi), uno por endpoint (ADR-014).
     login_rate_limit: str = "5/minute"
+    reset_request_rate_limit: str = "5/minute"
 
 
 @lru_cache

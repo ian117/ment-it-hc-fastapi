@@ -68,8 +68,10 @@ Copiá `.env.example` a `.env` para ajustar la configuración.
 | `JWT_SECRET` | `dev-only-insecure-secret-change-me` | Secreto para firmar los JWT. **Obligatorio cambiarlo en producción.** |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo de firma. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Vigencia del token de acceso. |
-| `RESET_TOKEN_EXPIRE_MINUTES` | `30` | Vigencia del token de reseteo. |
+| `RESET_TOKEN_EXPIRE_MINUTES` | `15` | Vigencia del token de reseteo. |
 | `LOGIN_RATE_LIMIT` | `5/minute` | Umbral de fuerza bruta para el login. |
+| `RESET_REQUEST_RATE_LIMIT` | `5/minute` | Umbral para `POST /auth/password-reset/request`. |
+| `ENVIRONMENT` | `development` | Con `production`, el reseteo no devuelve `resetToken`. |
 
 ---
 

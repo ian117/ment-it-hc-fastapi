@@ -16,11 +16,14 @@ class Login:
         users: UserRepository,
         hasher: PasswordHasher,
         tokens: TokenIssuer,
+        decoy: Optional[PasswordHash] = None,
     ) -> None:
         self._users = users
         self._hasher = hasher
         self._tokens = tokens
-        self._decoy: Optional[PasswordHash] = None
+        # Si la composición crea un `Login` por request, debe pasar un señuelo ya hecho:
+        # si no, cada instancia hashearía uno propio y el tiempo delataría el email.
+        self._decoy = decoy
 
     def execute(self, *, email: str, password: str) -> IssuedToken:
         user = None
