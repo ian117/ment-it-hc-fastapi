@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 
 from .api.routers import auth, notifications
-from .core.errors import register_exception_handlers
+from .api.problem_details import register_exception_handlers
 from .core.limiter import limiter
 from .core.middleware import SecurityHeadersMiddleware
 

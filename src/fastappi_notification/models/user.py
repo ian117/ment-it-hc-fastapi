@@ -1,7 +1,8 @@
+import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, String, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db import Base
 
@@ -9,7 +10,8 @@ from ..core.db import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # Auth heredado (hasta F6/F7): el UUID se genera aquí; pasará al dominio en F6.
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # unique a nivel de base: es la única garantía real de unicidad ante dos
     # registros concurrentes (criterio 1). Un chequeo en código deja una
     # ventana entre el SELECT y el INSERT.
@@ -18,7 +20,6 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
-    notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
-        back_populates="user", cascade="all, delete-orphan"
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

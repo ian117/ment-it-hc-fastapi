@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ...core.config import get_settings
 from ...core.db import get_db
-from ...core.errors import AppError
+from ..problem_details import AppError
 from ...core.limiter import limiter
 from ...core.security import (
     create_access_token,

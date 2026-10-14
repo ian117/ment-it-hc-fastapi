@@ -1,64 +1,81 @@
-from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy.orm import Session
+from uuid import UUID
 
-from ...core.db import get_db
+from fastapi import APIRouter, Depends, Query, Response, status
+
+from ...application.use_cases.create_notification import CreateNotification
+from ...application.use_cases.delete_notification import DeleteNotification
+from ...application.use_cases.get_my_notification import GetMyNotification
+from ...application.use_cases.list_my_notifications import ListMyNotifications
+from ...application.use_cases.revise_notification import ReviseNotification
 from ...models import User
-from ...schemas.notification import (
-    NotificationCreate,
-    NotificationOut,
+from .. import deps
+from ..schemas.notification import (
+    CreateNotificationRequest,
     NotificationPage,
-    NotificationUpdate,
+    NotificationResponse,
+    ReviseNotificationRequest,
 )
-from ...services import notifications as service
-from ..deps import get_current_user
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-@router.post("", response_model=NotificationOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 def create_notification(
-    data: NotificationCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    return service.create_and_send(db, user, data)
+    body: CreateNotificationRequest,
+    user: User = Depends(deps.get_current_user),
+    use_case: CreateNotification = Depends(deps.create_notification_use_case),
+) -> NotificationResponse:
+    notification = use_case.execute(
+        owner_id=user.id,
+        title=body.title,
+        content=body.content,
+        channel=body.channel,
+        recipient=body.payload.recipient,
+    )
+    return NotificationResponse.from_domain(notification)
 
 
 @router.get("", response_model=NotificationPage)
 def list_notifications(
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=service.MAX_PAGE_SIZE),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    items, total = service.list_owned(db, user, page, limit)
-    return NotificationPage(items=items, page=page, limit=limit, total=total)
+    limit: int = Query(20, ge=1, le=100),
+    user: User = Depends(deps.get_current_user),
+    use_case: ListMyNotifications = Depends(deps.list_my_notifications_use_case),
+) -> NotificationPage:
+    return NotificationPage.from_result(use_case.execute(user.id, page, limit))
 
 
-@router.get("/{notification_id}", response_model=NotificationOut)
+@router.get("/{id}", response_model=NotificationResponse)
 def get_notification(
-    notification_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    return service.get_owned(db, user, notification_id)
+    user: User = Depends(deps.get_current_user),
+    id: UUID = Depends(deps.notification_id),
+    use_case: GetMyNotification = Depends(deps.get_my_notification_use_case),
+) -> NotificationResponse:
+    return NotificationResponse.from_domain(use_case.execute(user.id, id))
 
 
-@router.patch("/{notification_id}", response_model=NotificationOut)
-def update_notification(
-    notification_id: int,
-    data: NotificationUpdate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    return service.update(db, user, notification_id, data)
+@router.patch("/{id}", response_model=NotificationResponse)
+def revise_notification(
+    body: ReviseNotificationRequest,
+    user: User = Depends(deps.get_current_user),
+    id: UUID = Depends(deps.notification_id),
+    use_case: ReviseNotification = Depends(deps.revise_notification_use_case),
+) -> NotificationResponse:
+    notification = use_case.execute(
+        user.id,
+        id,
+        title=body.title,
+        content=body.content,
+        recipient=body.payload.recipient if body.payload is not None else None,
+    )
+    return NotificationResponse.from_domain(notification)
 
 
-@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_notification(
-    notification_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    service.delete(db, user, notification_id)
+    user: User = Depends(deps.get_current_user),
+    id: UUID = Depends(deps.notification_id),
+    use_case: DeleteNotification = Depends(deps.delete_notification_use_case),
+) -> Response:
+    use_case.execute(user.id, id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,8 +1,9 @@
-"""Modelos ORM. Se importan todos acá para que `Base.metadata` los conozca
-al momento de generar migraciones o crear tablas."""
+"""Modelos ORM del auth heredado. Los de notificaciones viven en
+`infrastructure/persistence`. Se importan todos acá para que `Base.metadata`
+los conozca al generar migraciones o crear tablas."""
 
-from .notification import Notification, NotificationStatus
+from ..infrastructure.persistence.notification_model import NotificationModel
 from .password_reset import PasswordResetToken
 from .user import User
 
-__all__ = ["User", "Notification", "NotificationStatus", "PasswordResetToken"]
+__all__ = ["User", "NotificationModel", "PasswordResetToken"]

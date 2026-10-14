@@ -1,8 +1,7 @@
 """Fixtures para el test end-to-end contra una base real.
 
 Toda la conexión vive dentro de fixtures (nunca a nivel de import), así los
-tests unitarios de `test_security.py` y `test_channels.py` corren sin base y no
-disparan nada de esto.
+tests unitarios corren sin base y no disparan nada de esto.
 """
 
 import os
@@ -71,3 +70,34 @@ def client():
     app.dependency_overrides.clear()
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+class UserSession:
+    """Usuario registrado por la API, con su JWT y cabeceras listas."""
+
+    def __init__(self, id: str, email: str, headers: dict[str, str]) -> None:
+        self.id = id
+        self.email = email
+        self.headers = headers
+
+
+@pytest.fixture
+def make_user(client):
+    """Fábrica de usuarios: registra por la API y emite el JWT directamente.
+
+    El login real está limitado a 5/min por IP (slowapi), así que solo un test
+    pasa por `/auth/login`; el resto evita agotar ese límite.
+    """
+    import uuid
+
+    from fastappi_notification.core.security import create_access_token
+
+    def _make() -> UserSession:
+        email = f"user-{uuid.uuid4().hex[:12]}@example.com"
+        r = client.post("/auth/register", json={"email": email, "password": "secret12345"})
+        assert r.status_code == 201, r.text
+        user_id = r.json()["id"]
+        token = create_access_token(user_id)
+        return UserSession(user_id, email, {"Authorization": f"Bearer {token}"})
+
+    return _make
