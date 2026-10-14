@@ -6,27 +6,38 @@ La política de longitud de contraseña vive solo aquí (ADR-013, ADR-014).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import EmailStr, Field
+from pydantic import BeforeValidator, EmailStr, Field
 
 from ...domain.user import User
 from .notification import CamelModel, StrictCamelModel
 
 
+def _no_padding(value: object) -> object:
+    # `format: email` del contrato no admite espacios alrededor; EmailStr los recortaría
+    # en silencio y las dos APIs responderían distinto (detectado en F8).
+    if isinstance(value, str) and value != value.strip():
+        raise ValueError("must not have leading or trailing whitespace")
+    return value
+
+
+RequestEmail = Annotated[EmailStr, BeforeValidator(_no_padding)]
+
+
 class RegisterRequest(StrictCamelModel):
-    email: EmailStr = Field(max_length=320)
+    email: RequestEmail = Field(max_length=320)
     password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(StrictCamelModel):
-    email: EmailStr
+    email: RequestEmail
     password: str = Field(min_length=1)
 
 
 class PasswordResetRequest(StrictCamelModel):
-    email: EmailStr
+    email: RequestEmail
 
 
 class PasswordResetConfirm(StrictCamelModel):

@@ -73,3 +73,15 @@ def test_page_uses_data_key():
     dumped = page.model_dump(mode="json", by_alias=True)
     assert set(dumped) == {"data", "total", "page", "limit"}
     assert len(dumped["data"]) == 1
+
+
+@pytest.mark.parametrize("model", ["RegisterRequest", "LoginRequest", "PasswordResetRequest"])
+def test_auth_requests_reject_email_with_surrounding_whitespace(model):
+    from fastappi_notification.api.schemas import auth
+
+    cls = getattr(auth, model)
+    extra = {} if model == "PasswordResetRequest" else {"password": "secret12345"}
+    with pytest.raises(ValidationError) as exc:
+        cls.model_validate({"email": "  ana@example.com  ", **extra})
+    assert exc.value.errors()[0]["loc"] == ("email",)
+    cls.model_validate({"email": "ana@example.com", **extra})
