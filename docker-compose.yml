@@ -37,7 +37,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-notifications}
       # Default de desarrollo para que un clon limpio levante sin fricción.
-      # LÍMITE CONOCIDO: en producción hay que pasar un JWT_SECRET propio.
+      # Solo desarrollo: con ENVIRONMENT=production la app exige un JWT_SECRET propio (ADR-015).
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
     ports:
       - "${APP_PORT:-8000}:8000"

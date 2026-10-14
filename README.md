@@ -62,7 +62,7 @@ Se leen en `src/fastappi_notification/core/config.py` (entorno o `.env`).
 | Variable | Default | Efecto |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5434/notifications` | Conexión a PostgreSQL (psycopg3). La usan la app y Alembic. |
-| `JWT_SECRET` | `dev-only-insecure-secret-change-me` | Firma de los JWT (HS256). El default es inseguro a propósito: **en producción define uno propio**. |
+| `JWT_SECRET` | `dev-only-insecure-secret-change-me` | Firma de los JWT (HS256). Con `ENVIRONMENT=production` es obligatorio uno propio de ≥ 32 caracteres: si no, la app no arranca (ADR-015). Genera uno con `openssl rand -hex 32`. |
 | `JWT_ALGORITHM` | `HS256` | Algoritmo de firma. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Vigencia del JWT; `expiresIn` = minutos × 60. |
 | `RESET_TOKEN_EXPIRE_MINUTES` | `15` | Vigencia del token de reseteo de contraseña. |
