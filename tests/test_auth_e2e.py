@@ -32,3 +32,28 @@ def test_invalid_register_body_is_400_not_422(client):
     r = client.post("/auth/register", json={"email": "not-an-email", "password": "short"})
     assert r.status_code == 400
     assert {e["field"] for e in r.json()["errors"]} == {"email", "password"}
+
+
+def test_full_cycle_register_login_create_notification_on_alembic_schema(client):
+    """Registro -> login -> POST /notifications sobre el esquema REAL de Alembic.
+
+    Falla si una migración quita un DEFAULT que el modelo no reemplaza.
+    """
+    email = f"cycle-{uuid.uuid4().hex[:12]}@example.com"
+    r = client.post("/auth/register", json={"email": email, "password": "secret12345"})
+    assert r.status_code == 201, r.text
+
+    r = client.post("/auth/login", json={"email": email, "password": "secret12345"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # El auth sigue en snake_case hasta F7; tolera el camelCase del contrato.
+    token = body.get("accessToken") or body["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = client.post(
+        "/notifications",
+        headers=headers,
+        json={"title": "Hola", "content": "Cuerpo", "channel": "email", "payload": {"recipient": "ana@example.com"}},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["status"] == "sent"

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ...core.config import get_settings
 from ...core.db import get_db
+from ..openapi import problem_responses
 from ..problem_details import AppError
 from ...core.limiter import limiter
 from ...core.security import (
@@ -37,7 +38,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _DUMMY_HASH = hash_password("dummy-password-for-constant-time-check")
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(400, 409),
+)
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     user = User(email=payload.email, hashed_password=hash_password(payload.password))
     db.add(user)
@@ -52,7 +58,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     return user
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, responses=problem_responses(400, 401, 429))
 @limiter.limit(get_settings().login_rate_limit)
 def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email))
@@ -68,7 +74,11 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
     return Token(access_token=create_access_token(str(user.id)))
 
 
-@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/password-reset/request",
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=problem_responses(400, 429),
+)
 def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)) -> dict:
     """Siempre responde igual, exista o no el email (criterios 5 y 8).
 
@@ -93,7 +103,9 @@ def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(
     return {"message": "If the email exists, a reset link was sent"}
 
 
-@router.post("/password-reset/confirm", status_code=status.HTTP_200_OK)
+@router.post(
+    "/password-reset/confirm", status_code=status.HTTP_200_OK, responses=problem_responses(400)
+)
 def confirm_password_reset(payload: PasswordResetConfirm, db: Session = Depends(get_db)) -> dict:
     token_hash = hash_reset_token(payload.token)
     now = datetime.now(timezone.utc)

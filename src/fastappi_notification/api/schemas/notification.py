@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -11,6 +11,15 @@ from pydantic.alias_generators import to_camel
 
 from ...application.use_cases.list_my_notifications import ListResult
 from ...domain.notification import Notification
+
+
+CHANNEL_DESCRIPTION = (
+    "Canal de entrega. Valores conocidos: email, sms, push. "
+    "email: recipient es un email válido. "
+    "sms: recipient en E.164 y content de hasta 160 caracteres. "
+    "push: recipient es el device token."
+)
+STATUS_DESCRIPTION = "Estado de entrega. Valores conocidos: pending, sent, failed."
 
 
 class CamelModel(BaseModel):
@@ -29,12 +38,14 @@ class CreateNotificationRequest(StrictCamelModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
     # Solo string: el registro de canales decide si existe (ADR-004, ADR-012).
-    channel: str = Field(min_length=1, max_length=32)
+    channel: str = Field(min_length=1, max_length=32, description=CHANNEL_DESCRIPTION)
     payload: ChannelPayload
 
 
 class ReviseNotificationRequest(StrictCamelModel):
-    """Todos opcionales; un `null` explícito se rechaza (el contrato no lo admite)."""
+    """Todos opcionales (al menos uno); `channel` no se acepta. Un `null` explícito se rechaza."""
+
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
 
     # `default=None` sobre un tipo no opcional: ausente es válido, `null` no.
     title: str = Field(default=None, min_length=1, max_length=255)
@@ -52,10 +63,10 @@ class NotificationResponse(CamelModel):
     id: UUID
     title: str
     content: str
-    channel: str
+    channel: str = Field(description=CHANNEL_DESCRIPTION)
     payload: ChannelPayload
-    status: str
-    attempts: int
+    status: Literal["pending", "sent", "failed"] = Field(description=STATUS_DESCRIPTION)
+    attempts: int = Field(ge=0)
     error_message: Optional[str]
     sent_at: Optional[datetime]
     created_at: datetime
@@ -80,9 +91,9 @@ class NotificationResponse(CamelModel):
 
 class NotificationPage(CamelModel):
     data: list[NotificationResponse]
-    total: int
-    page: int
-    limit: int
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    limit: int = Field(ge=1, le=100)
 
     @classmethod
     def from_result(cls, result: ListResult) -> "NotificationPage":

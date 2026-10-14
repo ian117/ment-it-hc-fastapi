@@ -9,6 +9,7 @@ from ...application.use_cases.list_my_notifications import ListMyNotifications
 from ...application.use_cases.revise_notification import ReviseNotification
 from ...models import User
 from .. import deps
+from ..openapi import problem_responses
 from ..schemas.notification import (
     CreateNotificationRequest,
     NotificationPage,
@@ -16,10 +17,17 @@ from ..schemas.notification import (
     ReviseNotificationRequest,
 )
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(
+    prefix="/notifications", tags=["notifications"], responses=problem_responses(401)
+)
 
 
-@router.post("", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=NotificationResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(400),
+)
 def create_notification(
     body: CreateNotificationRequest,
     user: User = Depends(deps.get_current_user),
@@ -35,7 +43,7 @@ def create_notification(
     return NotificationResponse.from_domain(notification)
 
 
-@router.get("", response_model=NotificationPage)
+@router.get("", response_model=NotificationPage, responses=problem_responses(400))
 def list_notifications(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -45,7 +53,7 @@ def list_notifications(
     return NotificationPage.from_result(use_case.execute(user.id, page, limit))
 
 
-@router.get("/{id}", response_model=NotificationResponse)
+@router.get("/{id}", response_model=NotificationResponse, responses=problem_responses(404))
 def get_notification(
     user: User = Depends(deps.get_current_user),
     id: UUID = Depends(deps.notification_id),
@@ -54,7 +62,11 @@ def get_notification(
     return NotificationResponse.from_domain(use_case.execute(user.id, id))
 
 
-@router.patch("/{id}", response_model=NotificationResponse)
+@router.patch(
+    "/{id}",
+    response_model=NotificationResponse,
+    responses=problem_responses(400, 404, 409),
+)
 def revise_notification(
     body: ReviseNotificationRequest,
     user: User = Depends(deps.get_current_user),
@@ -71,7 +83,12 @@ def revise_notification(
     return NotificationResponse.from_domain(notification)
 
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@router.delete(
+    "/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    responses=problem_responses(404),
+)
 def delete_notification(
     user: User = Depends(deps.get_current_user),
     id: UUID = Depends(deps.notification_id),

@@ -14,9 +14,13 @@ config = context.config
 
 # La URL de la base la manda la app, no el .ini: una sola fuente de verdad y
 # funciona igual en local y en Docker.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Los tests pasan su propia URL (y piden no tocar el logging) vía `config.attributes`.
+_url_override = config.attributes.get("database_url")
+config.set_main_option(
+    "sqlalchemy.url", (_url_override or get_settings().database_url).replace("%", "%%")
+)
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and config.attributes.get("configure_logging", True):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

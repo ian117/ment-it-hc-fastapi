@@ -55,7 +55,7 @@ def get_current_user(
     return user
 
 
-def notification_id(id: str = Path(...)) -> UUID:
+def notification_id(id: str = Path(..., json_schema_extra={"format": "uuid"})) -> UUID:
     """Un id con formato inválido equivale a uno inexistente: 404 (ADR-012)."""
     try:
         return UUID(id)

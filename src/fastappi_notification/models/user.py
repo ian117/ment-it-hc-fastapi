@@ -20,6 +20,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # `default` (no server_default): la migración F4 quitó el DEFAULT de la columna,
+    # así que el INSERT debe enviar el valor.
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False
     )

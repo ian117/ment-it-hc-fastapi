@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
+from .api.openapi import install_openapi
 from .api.routers import auth, notifications
 from .api.problem_details import register_exception_handlers
 from .core.limiter import limiter
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
+    install_openapi(app)
     return app
 
 
