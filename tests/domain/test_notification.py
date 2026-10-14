@@ -401,3 +401,37 @@ def test_tras_el_ciclo_sent_sigue_siendo_terminal():
         n.revise(T4, title="Otro")
     with pytest.raises(InvalidNotificationTransition):
         n.mark_failed("tarde", T4)
+
+
+# --------------------------------------------------------------------------
+# ensure_editable y NotificationNotFound
+# --------------------------------------------------------------------------
+
+
+def test_ensure_editable_desde_failed_no_lanza():
+    crear_failed().ensure_editable()
+
+
+def test_ensure_editable_desde_pending_lanza_not_editable():
+    with pytest.raises(NotificationNotEditable):
+        crear_pending().ensure_editable()
+
+
+def test_ensure_editable_desde_sent_lanza_not_editable():
+    with pytest.raises(NotificationNotEditable):
+        crear_sent().ensure_editable()
+
+
+def test_ensure_editable_no_modifica_la_entidad():
+    n = crear_failed()
+    n.ensure_editable()
+    assert n.status is NotificationStatus.FAILED
+    assert n.error_message == "proveedor caído"
+
+
+def test_notification_not_found_guarda_el_id_opcional():
+    from fastappi_notification.domain.errors import NotificationNotFound
+
+    assert NotificationNotFound().id is None
+    assert NotificationNotFound(NOTIFICATION_ID).id == NOTIFICATION_ID
+    assert issubclass(NotificationNotFound, Exception)

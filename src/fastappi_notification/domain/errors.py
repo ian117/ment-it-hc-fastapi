@@ -1,6 +1,17 @@
+"""Errores de dominio. Sin dependencias externas; la capa `api/` los traduce a HTTP."""
+
 from __future__ import annotations
 
-"""Errores de dominio. Sin dependencias externas; la capa `api/` los traduce a HTTP."""
+from typing import Optional
+from uuid import UUID
+
+
+class NotificationNotFound(Exception):
+    """La notificación no existe o no es del usuario (HTTP 404; ambos casos son indistinguibles)."""
+
+    def __init__(self, id: Optional[UUID] = None) -> None:
+        self.id = id
+        super().__init__("Notification not found" if id is None else f"Notification not found: {id}")
 
 
 class NotificationNotEditable(Exception):

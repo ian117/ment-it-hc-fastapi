@@ -202,6 +202,11 @@ class Notification:
         self._attempts += 1
         self._updated_at = at
 
+    def ensure_editable(self) -> None:
+        """Única regla de editabilidad: solo `failed` (409). La reutiliza `revise`."""
+        if self._status is not NotificationStatus.FAILED:
+            raise NotificationNotEditable()
+
     def revise(
         self,
         at: datetime,
@@ -210,8 +215,7 @@ class Notification:
         content: Optional[str] = None,
         recipient: Optional[str] = None,
     ) -> None:
-        if self._status is not NotificationStatus.FAILED:
-            raise NotificationNotEditable()
+        self.ensure_editable()
         if title is not None:
             self._title = title
         if content is not None:
